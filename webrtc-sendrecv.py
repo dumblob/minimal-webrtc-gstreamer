@@ -2,26 +2,31 @@ import random
 import ssl
 import websockets
 import asyncio
-import os
 import sys
 import json
 import argparse
 
 import gi
-gi.require_version('Gst', '1.0')
 from gi.repository import Gst
-gi.require_version('GstWebRTC', '1.0')
 from gi.repository import GstWebRTC
-gi.require_version('GstSdp', '1.0')
 from gi.repository import GstSdp
+
+gi.require_version('Gst', '1.0')
+gi.require_version('GstWebRTC', '1.0')
+gi.require_version('GstSdp', '1.0')
 
 PIPELINE_DESC = '''
 webrtcbin name=sendrecv
- videotestsrc pattern=ball ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
- queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! sendrecv.
- audiotestsrc wave=red-noise ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
- queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
+ videotestsrc pattern=ball ! videoconvert ! queue !
+ vp8enc deadline=1 ! rtpvp8pay !
+ queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 !
+ sendrecv.
+ audiotestsrc wave=red-noise ! audioconvert ! audioresample ! queue !
+ opusenc ! rtpopuspay !
+ queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 !
+ sendrecv.
 '''
+
 
 class WebRTCClient:
     def __init__(self, id_, peer_id, server):
@@ -30,7 +35,7 @@ class WebRTCClient:
         self.pipe = None
         self.webrtc = None
         self.peer_id = peer_id
-        self.server = server or 'wss://webrtc.nirbheek.in:8443'
+        self.server = server or 'wss://localhost:8000/camera/ws/'
 
     async def connect(self):
         sslctx = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)
@@ -42,7 +47,7 @@ class WebRTCClient:
 
     def send_sdp_offer(self, offer):
         text = offer.sdp.as_text()
-        print ('Sending offer:\n%s' % text)
+        print('Sending offer:\n%s' % text)
         msg = json.dumps({'sdp': {'type': 'offer', 'sdp': text}})
         loop = asyncio.new_event_loop()
         loop.run_until_complete(self.conn.send(msg))
@@ -57,17 +62,19 @@ class WebRTCClient:
         self.send_sdp_offer(offer)
 
     def on_negotiation_needed(self, element):
-        promise = Gst.Promise.new_with_change_func(self.on_offer_created, element, None)
+        promise = Gst.Promise.new_with_change_func(self.on_offer_created,
+                                                   element, None)
         element.emit('create-offer', None, promise)
 
     def send_ice_candidate_message(self, _, mlineindex, candidate):
-        icemsg = json.dumps({'ice': {'candidate': candidate, 'sdpMLineIndex': mlineindex}})
+        icemsg = json.dumps({'ice': {'candidate': candidate,
+                             'sdpMLineIndex': mlineindex}})
         loop = asyncio.new_event_loop()
         loop.run_until_complete(self.conn.send(icemsg))
 
     def on_incoming_decodebin_stream(self, _, pad):
         if not pad.has_current_caps():
-            print (pad, 'has no caps, ignoring')
+            print(pad, 'has no caps, ignoring')
             return
 
         caps = pad.get_current_caps()
@@ -108,8 +115,10 @@ class WebRTCClient:
     def start_pipeline(self):
         self.pipe = Gst.parse_launch(PIPELINE_DESC)
         self.webrtc = self.pipe.get_by_name('sendrecv')
-        self.webrtc.connect('on-negotiation-needed', self.on_negotiation_needed)
-        self.webrtc.connect('on-ice-candidate', self.send_ice_candidate_message)
+        self.webrtc.connect('on-negotiation-needed',
+                            self.on_negotiation_needed)
+        self.webrtc.connect('on-ice-candidate',
+                            self.send_ice_candidate_message)
         self.webrtc.connect('pad-added', self.on_incoming_stream)
         self.pipe.set_state(Gst.State.PLAYING)
 
@@ -120,10 +129,11 @@ class WebRTCClient:
             sdp = msg['sdp']
             assert(sdp['type'] == 'answer')
             sdp = sdp['sdp']
-            print ('Received answer:\n%s' % sdp)
+            print('Received answer:\n%s' % sdp)
             res, sdpmsg = GstSdp.SDPMessage.new()
             GstSdp.sdp_message_parse_buffer(bytes(sdp.encode()), sdpmsg)
-            answer = GstWebRTC.WebRTCSessionDescription.new(GstWebRTC.WebRTCSDPType.ANSWER, sdpmsg)
+            answer = GstWebRTC.WebRTCSessionDescription.new(
+                        GstWebRTC.WebRTCSDPType.ANSWER, sdpmsg)
             promise = Gst.Promise.new()
             self.webrtc.emit('set-remote-description', answer, promise)
             promise.interrupt()
@@ -141,7 +151,7 @@ class WebRTCClient:
             elif message == 'SESSION_OK':
                 self.start_pipeline()
             elif message.startswith('ERROR'):
-                print (message)
+                print(message)
                 return 1
             else:
                 await self.handle_sdp(message)
@@ -151,20 +161,22 @@ class WebRTCClient:
 def check_plugins():
     needed = ["opus", "vpx", "nice", "webrtc", "dtls", "srtp", "rtp",
               "rtpmanager", "videotestsrc", "audiotestsrc"]
-    missing = list(filter(lambda p: Gst.Registry.get().find_plugin(p) is None, needed))
+    missing = list(filter(
+                lambda p: Gst.Registry.get().find_plugin(p) is None, needed))
     if len(missing):
         print('Missing gstreamer plugins:', missing)
         return False
     return True
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     Gst.init(None)
     if not check_plugins():
         sys.exit(1)
     parser = argparse.ArgumentParser()
     parser.add_argument('peerid', help='String ID of the peer to connect to')
-    parser.add_argument('--server', help='Signalling server to connect to, eg "wss://127.0.0.1:8443"')
+    parser.add_argument('--server', help='Signalling server to connect to,' +
+                                         ' eg "wss://127.0.0.1:8443"')
     args = parser.parse_args()
     our_id = random.randrange(10, 10000)
     c = WebRTCClient(our_id, args.peerid, args.server)
