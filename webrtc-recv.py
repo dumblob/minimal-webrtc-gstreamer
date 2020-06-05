@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import argparse
+import time
 
 import gi
 gi.require_version('Gst', '1.0')
@@ -87,11 +88,11 @@ class WebRTCClient:
             # box.set_property("autocrop", True)
             caps = Gst.Caps.from_string("video/x-raw,"
                                         # + "width=640,height=480,"
-                                        + "framerate=30/1,"
+                                        # + "framerate=30/1,"
                                         + "format=YUY2")
             capsfilter = Gst.ElementFactory.make("capsfilter", "filter")
             capsfilter.set_property("caps", caps)
-            # sink = Gst.ElementFactory.make('autovideosink')
+            # disp = Gst.ElementFactory.make('autovideosink')
             sink = Gst.ElementFactory.make('v4l2sink')
             sink.set_property('device', '/dev/video1')
             self.pipe.add(q, conv, capsfilter, sink)
@@ -151,17 +152,23 @@ class WebRTCClient:
             self.webrtc.emit('add-ice-candidate', sdpmlineindex, candidate)
 
     async def loop(self):
-        assert self.conn
-        async for message in self.conn:
-            if message == 'HELLO':
-                await self.setup_call()
-            elif message == 'SESSION_OK':
-                self.start_pipeline()
-            elif message.startswith('ERROR'):
-                print (message)
-                return 1
-            else:
-                await self.handle_sdp(message)
+        try:
+            assert self.conn
+            async for message in self.conn:
+                if message == 'HELLO':
+                    await self.setup_call()
+                elif message == 'SESSION_OK':
+                    self.start_pipeline()
+                elif message.startswith('ERROR'):
+                    print(message)
+                    return 1
+                else:
+                    await self.handle_sdp(message)
+        except Exception:
+            pass
+        if self.webrtc:
+            while True:
+                time.sleep(60)
         return 0
 
 
@@ -187,4 +194,4 @@ if __name__=='__main__':
     c = WebRTCClient(our_id, args.peerid, args.server)
     asyncio.get_event_loop().run_until_complete(c.connect())
     res = asyncio.get_event_loop().run_until_complete(c.loop())
-    sys.exit(res)
+    #sys.exit(res)

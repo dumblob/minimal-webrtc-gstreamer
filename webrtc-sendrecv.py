@@ -4,6 +4,7 @@ import random
 import ssl
 import websockets
 import asyncio
+import os
 import sys
 import json
 import argparse
@@ -32,7 +33,7 @@ webrtcbin name=sendrecv
 
 
 class WebRTCClient:
-    def __init__(self, id_, url):
+    def __init__(self, id_, url, roomName):
         self.id_ = id_
         self.conn = None
         self.pipe = None
@@ -41,17 +42,27 @@ class WebRTCClient:
         self.has_offer = False
 
         parts = url.split('#')
-        self.roomName = parts[1]
-        self.server = 'ws' + parts[0][4:] + 'ws/client/' + self.roomName + '/'
+        if roomName is None or len(roomName) == 0:
+            self.is_host = False
+            self.roomName = parts[1]
+        else:
+            self.is_host = True
+            self.roomName = roomName
+            os.system('qr ' + url + '#' + self.roomName)
+        self.server = 'ws' + parts[0][4:] + 'ws/'\
+            + ('host' if self.is_host else 'client') + '/'\
+            + self.roomName + '/'
 
     async def connect(self):
         sslctx = ssl.create_default_context(purpose=ssl.Purpose.CLIENT_AUTH)
         self.conn = await websockets.connect(self.server, ssl=sslctx)
-        await self.conn.send('{"ready": true}')
+        if not self.is_host:
+            await self.conn.send('{"ready": "separateIce"}')
+            self.start_pipeline()
 
     def send_sdp_offer(self, offer):
-        if not self.has_offer:
-            return
+        if not self.is_host and not self.has_offer:
+            pass
         text = offer.sdp.as_text()
         print('Sending offer:\n%s' % text)
         msg = json.dumps({'description': {'type': 'offer', 'sdp': text}})
@@ -59,6 +70,7 @@ class WebRTCClient:
         loop.run_until_complete(self.conn.send(msg))
 
     def on_offer_created(self, promise, _, __):
+        print('In on_offer_created...')
         promise.wait()
         reply = promise.get_reply()
         offer = reply['offer']
@@ -68,13 +80,14 @@ class WebRTCClient:
         self.send_sdp_offer(offer)
 
     def on_negotiation_needed(self, element):
+        print('In on_negotiation_needed...')
         promise = Gst.Promise.new_with_change_func(self.on_offer_created,
                                                    element, None)
         element.emit('create-offer', None, promise)
 
     def send_ice_candidate_message(self, _, mlineindex, candidate):
-        if not self.has_offer:
-            return
+        if not self.is_host and not self.has_offer:
+            pass
         icemsg = json.dumps({'candidate': candidate,
                              'sdpMLineIndex': mlineindex})
         loop = asyncio.new_event_loop()
@@ -136,6 +149,7 @@ class WebRTCClient:
         channel.connect('on-message-string', self.on_data_channel_message)
 
     def start_pipeline(self):
+        print('In start_pipeline...')
         self.pipe = Gst.parse_launch(PIPELINE_DESC)
         self.webrtc = self.pipe.get_by_name('sendrecv')
         self.webrtc.connect('on-negotiation-needed',
@@ -146,36 +160,46 @@ class WebRTCClient:
                             self.on_data_channel)
         self.webrtc.connect('pad-added', self.on_incoming_stream)
         self.pipe.set_state(Gst.State.PLAYING)
-        self.webrtc.emit('create-data-channel', 'data', None)
 
-    async def handle_sdp(self, message):
+    async def handle_sdp(self, msg):
         if not self.webrtc:
             self.start_pipeline()
         assert (self.webrtc)
-        msg = json.loads(message)
         if 'description' in msg:
+            print('connection-state=%s'
+                  % self.webrtc.get_property('connection-state'))
             self.has_offer = True
             sdp = msg['description']
+            typ = sdp['type']
             # assert(sdp['type'] == 'answer')
             sdp = sdp['sdp']
-            print('Received answer:\n%s' % sdp)
+            print('Received %s:\n%s' % (typ, sdp))
             res, sdpmsg = GstSdp.SDPMessage.new()
             GstSdp.sdp_message_parse_buffer(bytes(sdp.encode()), sdpmsg)
             answer = GstWebRTC.WebRTCSessionDescription.new(
-                        GstWebRTC.WebRTCSDPType.ANSWER, sdpmsg)
+                       GstWebRTC.WebRTCSDPType.ANSWER
+                       if typ == 'answer'
+                       else GstWebRTC.WebRTCSDPType.OFFER,
+                       sdpmsg)
             promise = Gst.Promise.new()
             self.webrtc.emit('set-remote-description', answer, promise)
             promise.interrupt()
-        elif 'ice' in msg:
-            ice = msg['ice']
-            candidate = ice['candidate']
-            sdpmlineindex = ice['sdpMLineIndex']
+            #if typ == 'offer':
+                #self.on_negotiation_needed(self.webrtc)
+        elif 'candidate' in msg:
+            candidate = msg['candidate']
+            sdpmlineindex = msg['sdpMLineIndex']
             self.webrtc.emit('add-ice-candidate', sdpmlineindex, candidate)
 
     async def loop(self):
         assert self.conn
         async for message in self.conn:
-            await self.handle_sdp(message)
+            msg = json.loads(message)
+            if 'ready' in msg:
+                self.start_pipeline()
+                await self.conn.send('{"settings": {"separateIce": true, "serverless":false,"client-video":"environment","client-audio":false,"host-video":"true","host-audio":false,"debug":true}}')
+            else:
+                await self.handle_sdp(msg)
         return 0
 
 
@@ -196,9 +220,11 @@ if __name__ == '__main__':
         sys.exit(1)
     parser = argparse.ArgumentParser()
     parser.add_argument('url', help='URL from minimal-webrtc')
+    parser.add_argument('roomName',
+                        help='room name to host')
     args = parser.parse_args()
     our_id = random.randrange(10, 10000)
-    c = WebRTCClient(our_id, args.url)
+    c = WebRTCClient(our_id, args.url, args.roomName)
     asyncio.get_event_loop().run_until_complete(c.connect())
     res = asyncio.get_event_loop().run_until_complete(c.loop())
     sys.exit(res)
