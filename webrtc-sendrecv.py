@@ -50,7 +50,9 @@ class WebRTCClient:
         else:
             self.roomName = args.roomName
         qr = qrcode.QRCode()
-        qr.add_data('#'.join([self.url, self.roomName]))
+        client_url = '#'.join([self.url, self.roomName])
+        print(client_url)
+        qr.add_data(client_url)
         qr.print_ascii(tty=True)
         self.server = 'ws' + self.url[4:] + 'ws/'\
             + ('host' if self.is_host else 'client') + '/'\
