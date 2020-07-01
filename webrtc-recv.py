@@ -22,7 +22,9 @@ PIPELINE_DESC = '''
 webrtcbin name=sendrecv
  videotestsrc pattern=ball ! videoconvert ! queue ! vp8enc deadline=1 ! rtpvp8pay !
  queue ! application/x-rtp,media=video,encoding-name=VP8,payload=97 ! sendrecv.
- '''
+ pulsesrc device="alsa_output.pci-0000_00_1f.3.analog-stereo.monitor" ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
+ queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
+'''
 '''
  audiotestsrc wave=red-noise ! audioconvert ! audioresample ! queue ! opusenc ! rtpopuspay !
  queue ! application/x-rtp,media=audio,encoding-name=OPUS,payload=96 ! sendrecv.
@@ -71,6 +73,7 @@ class WebRTCClient:
         loop.run_until_complete(self.conn.send(icemsg))
 
     def on_incoming_decodebin_stream(self, _, pad):
+        print("In on_incoming_decodebin_stream...")
         if not pad.has_current_caps():
             print (pad, 'has no caps, ignoring')
             return
@@ -80,6 +83,7 @@ class WebRTCClient:
         s = caps[0]
         name = s.get_name()
         if name.startswith('video'):
+            print("Connecting incoming video stream...")
             q = Gst.ElementFactory.make('queue')
             conv = Gst.ElementFactory.make('videoconvert')
             # rate = Gst.ElementFactory.make('videorate')
@@ -102,10 +106,13 @@ class WebRTCClient:
             conv.link(capsfilter)
             capsfilter.link(sink)
         elif name.startswith('audio'):
+            print("Connecting incoming audio stream...")
             q = Gst.ElementFactory.make('queue')
             conv = Gst.ElementFactory.make('audioconvert')
             resample = Gst.ElementFactory.make('audioresample')
-            sink = Gst.ElementFactory.make('autoaudiosink')
+            sink = Gst.ElementFactory.make('filesink')
+            sink.set_property('location', os.environ['HOME']+'/tmp/virtmic')
+            sink.set_property('sync', 'true')
             self.pipe.add(q, conv, resample, sink)
             self.pipe.sync_children_states()
             pad.link(q.get_static_pad('sink'))
