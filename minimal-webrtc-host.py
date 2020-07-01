@@ -321,7 +321,9 @@ if __name__ == '__main__':
                         help='Set video to receive ("screen", '
                              + '"environment", "facing", "true", "false")')
     parser.add_argument('--receiveAudioTo', default=None,
-                        help='"auto" or file path to send received audio to')
+                        help='"auto" or file path or device=DEVICE '
+                             + 'where DEVICE is a PulseAudio sink '
+                             + 'to send received audio to ')
     parser.add_argument('--receiveVideoTo', default=None,
                         help='"auto" or file path to send received video to')
     args = parser.parse_args()
