@@ -1,10 +1,12 @@
 # minimal-webrtc-gstreamer
 
 GStreamer client for
-[minimal-webrtc][https://git.aweirdimagination.net/perelman/minimal-webrtc].
+[minimal-webrtc](https://git.aweirdimagination.net/perelman/minimal-webrtc).
 Primarily intended for getting camera/microphone streams from a
 smartphone into arbitrary GStreamer pipelines, but should be useful
 generally as a GStreamer WebRTC example application.
+Based on [`webrtc-sendrecv.py`](https://github.com/centricular/gstwebrtc-demos/blob/master/sendrecv/gst/webrtc-sendrecv.py)
+from [`gstwebrtc-demos`](https://github.com/centricular/gstwebrtc-demos/).
 
 Example usage:
 ```sh

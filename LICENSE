@@ -1,7 +1,7 @@
-Initial code for webrtc-recv.py and webrtc-sendrecv.py are from
-https://github.com/matthew1000/gstwebrtc-demos/tree/master/sendrecv/gst
+Code initially based on
+https://github.com/centricular/gstwebrtc-demos/blob/master/sendrecv/gst/webrtc-sendrecv.py
 which is under the BSD 2-Clause License; full text at
-https://github.com/matthew1000/gstwebrtc-demos/blob/master/LICENSE
+https://github.com/centricular/gstwebrtc-demos/blob/master/LICENSE
 
 Changes in this repository are licensed under the following license:
 
