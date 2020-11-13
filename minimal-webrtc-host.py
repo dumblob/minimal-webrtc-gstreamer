@@ -112,7 +112,7 @@ class WebRTCClient:
         print('In on_offer_created...')
         promise.wait()
         reply = promise.get_reply()
-        offer = reply['offer']
+        offer = reply.get_value('offer')
         promise = Gst.Promise.new()
         self.webrtc.emit('set-local-description', offer, promise)
         promise.interrupt()
@@ -139,8 +139,8 @@ class WebRTCClient:
             return
 
         caps = pad.get_current_caps()
-        assert (len(caps))
-        s = caps[0]
+        assert caps.get_size()
+        s = caps.get_structure(0)
         name = s.get_name()
         if name.startswith('video'):
             print("Connecting incoming video stream...")
@@ -149,7 +149,9 @@ class WebRTCClient:
             if self.args.receiveVideoTo == 'auto':
                 print('Displaying video to screen using autovideosink.')
                 sink = Gst.ElementFactory.make('autovideosink')
-                self.pipe.add(q, conv, sink)
+                self.pipe.add(q)
+                self.pipe.add(conv)
+                self.pipe.add(sink)
                 self.pipe.sync_children_states()
                 pad.link(q.get_static_pad('sink'))
                 q.link(conv)
@@ -162,7 +164,10 @@ class WebRTCClient:
                 capsfilter.set_property("caps", caps)
                 sink = Gst.ElementFactory.make('v4l2sink')
                 sink.set_property('device', self.args.receiveVideoTo)
-                self.pipe.add(q, conv, capsfilter, sink)
+                self.pipe.add(q)
+                self.pipe.add(conv)
+                self.pipe.add(capsfilter)
+                self.pipe.add(sink)
                 self.pipe.sync_children_states()
                 pad.link(q.get_static_pad('sink'))
                 q.link(conv)
@@ -202,7 +207,11 @@ class WebRTCClient:
                 sink = Gst.ElementFactory.make('filesink')
                 sink.set_property('location', self.args.receiveAudioTo)
                 sink.set_property('sync', 'true')
-                self.pipe.add(q, conv, resample, capsfilter, sink)
+                self.pipe.add(q)
+                self.pipe.add(conv)
+                self.pipe.add(resample)
+                self.pipe.add(capsfilter)
+                self.pipe.add(sink)
                 self.pipe.sync_children_states()
                 pad.link(q.get_static_pad('sink'))
                 q.link(conv)
